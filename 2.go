@@ -91,6 +91,7 @@ func NewCryptoSymmetricContext(
 		extraParams: make(map[string]interface{}),
 		blockSize:   blockSize,
 	}
+	fmt.Printf("IV установлен в контексте: %x\n", iv)
 
 	// Установка ключа в cipher
 	if err := cstc.cipher.SetKey(key); err != nil {
@@ -244,8 +245,73 @@ func (cstc *CryptoSymmetricContext) DecryptAsync(data []byte) (<-chan []byte, <-
 	return resultChan, errorChan
 }
 
-// Шифрование файла с буферизацией
 func (cstc *CryptoSymmetricContext) EncryptToFile(inputPath, outputPath string) error {
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %v", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	// Читаем весь файл
+	data, err := io.ReadAll(inputFile)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %v", err)
+	}
+
+	// Шифруем данные, используя выбранный режим и набивку
+	encryptedData, err := cstc.Encrypt(data)
+	if err != nil {
+		return fmt.Errorf("encryption failed: %v", err)
+	}
+
+	// Записываем зашифрованные данные в выходной файл
+	if _, err := outputFile.Write(encryptedData); err != nil {
+		return fmt.Errorf("failed to write to output file: %v", err)
+	}
+
+	return nil
+}
+func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string) error {
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %v", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	// Читаем весь файл
+	data, err := io.ReadAll(inputFile)
+	if err != nil {
+		return fmt.Errorf("failed to read input file: %v", err)
+	}
+
+	// Дешифруем данные, используя выбранный режим и удаляя набивку
+	decryptedData, err := cstc.Decrypt(data)
+	if err != nil {
+		return fmt.Errorf("decryption failed: %v", err)
+	}
+
+	// Записываем расшифрованные данные в выходной файл
+	if _, err := outputFile.Write(decryptedData); err != nil {
+		return fmt.Errorf("failed to write to output file: %v", err)
+	}
+
+	return nil
+}
+
+// Шифрование файла с буферизацией
+/*func (cstc *CryptoSymmetricContext) EncryptToFile(inputPath, outputPath string) error {
 	inputFile, err := os.Open(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to open input file: %v", err)
@@ -277,7 +343,7 @@ func (cstc *CryptoSymmetricContext) EncryptToFile(inputPath, outputPath string) 
 				if err != nil {
 					return fmt.Errorf("failed to add padding: %v", err)
 				}
-				encryptedBlock, err := cstc.cipher.Encrypt(paddedBlock)
+				encryptedBlock, err := cstc.Encrypt(paddedBlock)
 				if err != nil {
 					return fmt.Errorf("encryption failed: %v", err)
 				}
@@ -331,7 +397,7 @@ func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string
 			return fmt.Errorf("failed to read input file: %v", err)
 		}
 
-		decryptedBlock, err := cstc.cipher.Decrypt(buffer)
+		decryptedBlock, err := cstc.Decrypt(buffer)
 		if err != nil {
 			return fmt.Errorf("decryption failed: %v", err)
 		}
@@ -360,7 +426,7 @@ func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string
 	}
 
 	return nil
-}
+}*/
 
 // Реализация режима ECB с распараллеливанием
 func (cstc *CryptoSymmetricContext) encryptECB(data []byte) ([]byte, error) {
@@ -664,7 +730,7 @@ func (cstc *CryptoSymmetricContext) encryptOFB(data []byte) ([]byte, error) {
 	encrypted := make([]byte, len(data))
 	feedback := make([]byte, blockSize)
 	copy(feedback, cstc.iv)
-
+	fmt.Printf("Используемый IV: %x\n", cstc.iv)
 	for i := 0; i < len(data); i += blockSize {
 		// Шифруем текущий `feedback`
 		outputBlock, err := cstc.cipher.Encrypt(feedback)
