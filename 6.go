@@ -9,7 +9,8 @@ import (
 
 // DEAL структура, представляющая алгоритм DEAL
 type DEAL struct {
-	feistel *FeistelNetwork
+	feistel   *FeistelNetwork
+	blockSize int
 }
 
 // NewDEAL создает новый экземпляр DEAL
@@ -20,7 +21,8 @@ func NewDEAL() (*DEAL, error) {
 	// Количество раундов зависит от длины ключа; здесь используется 6 раундов для примера
 	feistel := NewFeistelNetwork(6, keySchedule, roundFunction)
 	deal := &DEAL{
-		feistel: feistel,
+		feistel:   feistel,
+		blockSize: 16,
 	}
 
 	return deal, nil
@@ -88,7 +90,6 @@ func (ks *DEALKeySchedule) GenerateKeys(inputKey []byte) ([][]byte, error) {
 
 	return roundKeys, nil
 }
-
 
 // DEALRoundFunction реализует интерфейс CipherTransform для DEAL
 type DEALRoundFunction struct {

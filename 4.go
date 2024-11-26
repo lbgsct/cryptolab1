@@ -8,7 +8,8 @@ import (
 
 // DES структура, представляющая алгоритм DES
 type DES struct {
-	feistel *FeistelNetwork
+	feistel   *FeistelNetwork
+	blockSize int
 }
 
 // NewDES создает новый экземпляр DES
@@ -18,7 +19,8 @@ func NewDES() (*DES, error) {
 
 	feistel := NewFeistelNetwork(16, keySchedule, roundFunction)
 	des := &DES{
-		feistel: feistel,
+		feistel:   feistel,
+		blockSize: 16,
 	}
 
 	return des, nil

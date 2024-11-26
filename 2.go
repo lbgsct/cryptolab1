@@ -127,7 +127,7 @@ func (cstc *CryptoSymmetricContext) Encrypt(data []byte) ([]byte, error) {
 	}
 
 	// Добавление набивки
-	dataPadded, err := cstc.addPadding(data)
+	dataPadded, err := cstc.AddPadding(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add padding: %v", err)
 	}
@@ -196,7 +196,7 @@ func (cstc *CryptoSymmetricContext) Decrypt(data []byte) ([]byte, error) {
 	}
 
 	// Удаление набивки
-	decrypted, err = cstc.removePadding(decrypted)
+	decrypted, err = cstc.RemovePadding(decrypted)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove padding: %v", err)
 	}
@@ -259,31 +259,46 @@ func (cstc *CryptoSymmetricContext) EncryptToFile(inputPath, outputPath string) 
 	defer outputFile.Close()
 
 	blockSize := cstc.blockSize
-	buffer := make([]byte, blockSize*1024) // Буфер для обработки нескольких блоков
+	buffer := make([]byte, 0, blockSize)
 
 	for {
-		n, err := inputFile.Read(buffer)
+		chunk := make([]byte, blockSize-len(buffer))
+		n, err := inputFile.Read(chunk)
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("failed to read input file: %v", err)
 		}
 
-		if n == 0 {
-			break
+		buffer = append(buffer, chunk[:n]...)
+
+		if len(buffer) < blockSize {
+			if err == io.EOF {
+				// Последний блок, добавляем набивку
+				paddedBlock, err := cstc.AddPadding(buffer)
+				if err != nil {
+					return fmt.Errorf("failed to add padding: %v", err)
+				}
+				encryptedBlock, err := cstc.cipher.Encrypt(paddedBlock)
+				if err != nil {
+					return fmt.Errorf("encryption failed: %v", err)
+				}
+				if _, err := outputFile.Write(encryptedBlock); err != nil {
+					return fmt.Errorf("failed to write to output file: %v", err)
+				}
+				break
+			}
+			// Ждем, пока буфер заполнится до размера блока
+			continue
 		}
 
-		// Берем только прочитанные данные
-		dataChunk := buffer[:n]
-
-		// Шифруем данные
-		encryptedData, err := cstc.Encrypt(dataChunk)
+		encryptedBlock, err := cstc.cipher.Encrypt(buffer)
 		if err != nil {
 			return fmt.Errorf("encryption failed: %v", err)
 		}
-
-		// Записываем зашифрованные данные в выходной файл
-		if _, err := outputFile.Write(encryptedData); err != nil {
+		if _, err := outputFile.Write(encryptedBlock); err != nil {
 			return fmt.Errorf("failed to write to output file: %v", err)
 		}
+		// Сбрасываем буфер
+		buffer = buffer[:0]
 	}
 
 	return nil
@@ -304,29 +319,42 @@ func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string
 	defer outputFile.Close()
 
 	blockSize := cstc.blockSize
-	buffer := make([]byte, blockSize*1024) // Буфер для обработки нескольких блоков
+	buffer := make([]byte, blockSize)
 
 	for {
-		n, err := inputFile.Read(buffer)
-		if err != nil && err != io.EOF {
+		_, err := io.ReadFull(inputFile, buffer)
+		if err == io.EOF {
+			break // Нет больше данных
+		} else if err == io.ErrUnexpectedEOF {
+			return fmt.Errorf("input file is not a multiple of block size")
+		} else if err != nil {
 			return fmt.Errorf("failed to read input file: %v", err)
 		}
 
-		if n == 0 {
-			break
-		}
-
-		// Берем только прочитанные данные
-		dataChunk := buffer[:n]
-
-		// Дешифруем данные
-		decryptedData, err := cstc.Decrypt(dataChunk)
+		decryptedBlock, err := cstc.cipher.Decrypt(buffer)
 		if err != nil {
 			return fmt.Errorf("decryption failed: %v", err)
 		}
 
-		// Записываем расшифрованные данные в выходной файл
-		if _, err := outputFile.Write(decryptedData); err != nil {
+		// Проверяем, является ли это последний блок
+		peekBuffer := make([]byte, 1)
+		_, err = inputFile.Read(peekBuffer)
+		if err == io.EOF {
+			// Это последний блок, удаляем набивку
+			decryptedBlock, err = cstc.RemovePadding(decryptedBlock)
+			if err != nil {
+				return fmt.Errorf("failed to remove padding: %v", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("failed to read input file: %v", err)
+		} else {
+			// Не последний блок, возвращаемся на 1 байт назад
+			if _, err := inputFile.Seek(-1, io.SeekCurrent); err != nil {
+				return fmt.Errorf("failed to seek in input file: %v", err)
+			}
+		}
+
+		if _, err := outputFile.Write(decryptedBlock); err != nil {
 			return fmt.Errorf("failed to write to output file: %v", err)
 		}
 	}
@@ -793,7 +821,7 @@ func (cstc *CryptoSymmetricContext) decryptRandomDelta(data []byte) ([]byte, err
 }
 
 // Реализация методов добавления и удаления набивки
-func (cstc *CryptoSymmetricContext) addPadding(data []byte) ([]byte, error) {
+func (cstc *CryptoSymmetricContext) AddPadding(data []byte) ([]byte, error) {
 	blockSize := cstc.blockSize
 	paddingLen := blockSize - (len(data) % blockSize)
 	if paddingLen == 0 {
@@ -814,7 +842,7 @@ func (cstc *CryptoSymmetricContext) addPadding(data []byte) ([]byte, error) {
 	}
 }
 
-func (cstc *CryptoSymmetricContext) removePadding(data []byte) ([]byte, error) {
+func (cstc *CryptoSymmetricContext) RemovePadding(data []byte) ([]byte, error) {
 	switch cstc.padding {
 	case Zeros:
 		return removeZerosPadding(data), nil
