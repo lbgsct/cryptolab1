@@ -147,19 +147,21 @@ func main() {
 	}
 
 	// Выполняем шифрование или дешифрование файла
+	var errChan <-chan error
 	if *encryptFlag {
-		err = cryptoContext.EncryptToFile(*inputFile, *outputFile)
-		if err != nil {
-			fmt.Printf("Ошибка при шифровании: %v\n", err)
-			os.Exit(1)
-		}
+		errChan = cryptoContext.EncryptFileAsync(*inputFile, *outputFile)
+	} else {
+		errChan = cryptoContext.DecryptFileAsync(*inputFile, *outputFile)
+	}
+	// Ожидаем завершения операции
+	if err := <-errChan; err != nil {
+		fmt.Printf("Ошибка при обработке файла: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *encryptFlag {
 		fmt.Println("Шифрование завершено успешно.")
 	} else {
-		err = cryptoContext.DecryptFromFile(*inputFile, *outputFile)
-		if err != nil {
-			fmt.Printf("Ошибка при дешифровании: %v\n", err)
-			os.Exit(1)
-		}
 		fmt.Println("Дешифрование завершено успешно.")
 	}
 }

@@ -28,8 +28,6 @@ type SymmetricAlgorithm interface {
 	Decrypt(data []byte) ([]byte, error)
 	EncryptAsync(data []byte) (<-chan []byte, <-chan error)
 	DecryptAsync(data []byte) (<-chan []byte, <-chan error)
-	/*EncryptToFile(inputPath, outputPath string) error
-	DecryptFromFile(inputPath, outputPath string) error*/
 }
 
 // Режимы шифрования
@@ -309,124 +307,6 @@ func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string
 
 	return nil
 }
-
-// Шифрование файла с буферизацией
-/*func (cstc *CryptoSymmetricContext) EncryptToFile(inputPath, outputPath string) error {
-	inputFile, err := os.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input file: %v", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %v", err)
-	}
-	defer outputFile.Close()
-
-	blockSize := cstc.blockSize
-	buffer := make([]byte, 0, blockSize)
-
-	for {
-		chunk := make([]byte, blockSize-len(buffer))
-		n, err := inputFile.Read(chunk)
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read input file: %v", err)
-		}
-
-		buffer = append(buffer, chunk[:n]...)
-
-		if len(buffer) < blockSize {
-			if err == io.EOF {
-				// Последний блок, добавляем набивку
-				paddedBlock, err := cstc.AddPadding(buffer)
-				if err != nil {
-					return fmt.Errorf("failed to add padding: %v", err)
-				}
-				encryptedBlock, err := cstc.Encrypt(paddedBlock)
-				if err != nil {
-					return fmt.Errorf("encryption failed: %v", err)
-				}
-				if _, err := outputFile.Write(encryptedBlock); err != nil {
-					return fmt.Errorf("failed to write to output file: %v", err)
-				}
-				break
-			}
-			// Ждем, пока буфер заполнится до размера блока
-			continue
-		}
-
-		encryptedBlock, err := cstc.cipher.Encrypt(buffer)
-		if err != nil {
-			return fmt.Errorf("encryption failed: %v", err)
-		}
-		if _, err := outputFile.Write(encryptedBlock); err != nil {
-			return fmt.Errorf("failed to write to output file: %v", err)
-		}
-		// Сбрасываем буфер
-		buffer = buffer[:0]
-	}
-
-	return nil
-}
-
-// Дешифрование файла с буферизацией
-func (cstc *CryptoSymmetricContext) DecryptFromFile(inputPath, outputPath string) error {
-	inputFile, err := os.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to open input file: %v", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %v", err)
-	}
-	defer outputFile.Close()
-
-	blockSize := cstc.blockSize
-	buffer := make([]byte, blockSize)
-
-	for {
-		_, err := io.ReadFull(inputFile, buffer)
-		if err == io.EOF {
-			break // Нет больше данных
-		} else if err == io.ErrUnexpectedEOF {
-			return fmt.Errorf("input file is not a multiple of block size")
-		} else if err != nil {
-			return fmt.Errorf("failed to read input file: %v", err)
-		}
-
-		decryptedBlock, err := cstc.Decrypt(buffer)
-		if err != nil {
-			return fmt.Errorf("decryption failed: %v", err)
-		}
-
-		// Проверяем, является ли это последний блок
-		peekBuffer := make([]byte, 1)
-		_, err = inputFile.Read(peekBuffer)
-		if err == io.EOF {
-			// Это последний блок, удаляем набивку
-			decryptedBlock, err = cstc.RemovePadding(decryptedBlock)
-			if err != nil {
-				return fmt.Errorf("failed to remove padding: %v", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("failed to read input file: %v", err)
-		} else {
-			// Не последний блок, возвращаемся на 1 байт назад
-			if _, err := inputFile.Seek(-1, io.SeekCurrent); err != nil {
-				return fmt.Errorf("failed to seek in input file: %v", err)
-			}
-		}
-
-		if _, err := outputFile.Write(decryptedBlock); err != nil {
-			return fmt.Errorf("failed to write to output file: %v", err)
-		}
-	}
-
-	return nil
-}*/
 
 // Реализация режима ECB с распараллеливанием
 func (cstc *CryptoSymmetricContext) encryptECB(data []byte) ([]byte, error) {
@@ -988,18 +868,6 @@ func (cstc *CryptoSymmetricContext) EncryptFileAsync(inputPath, outputPath strin
 	return errChan
 }
 
-func (cstc *CryptoSymmetricContext) DecryptFileAsync(inputPath, outputPath string) <-chan error {
-	errChan := make(chan error, 1)
-	go func() {
-		defer close(errChan)
-		err := cstc.decryptFile(inputPath, outputPath)
-		if err != nil {
-			errChan <- err
-		}
-	}()
-	return errChan
-}
-
 func (cstc *CryptoSymmetricContext) encryptFile(inputPath, outputPath string) error {
 	inputFile, err := os.Open(inputPath)
 	if err != nil {
@@ -1042,6 +910,18 @@ func (cstc *CryptoSymmetricContext) encryptFile(inputPath, outputPath string) er
 	}
 
 	return nil
+}
+
+func (cstc *CryptoSymmetricContext) DecryptFileAsync(inputPath, outputPath string) <-chan error {
+	errChan := make(chan error, 1)
+	go func() {
+		defer close(errChan)
+		err := cstc.decryptFile(inputPath, outputPath)
+		if err != nil {
+			errChan <- err
+		}
+	}()
+	return errChan
 }
 
 func (cstc *CryptoSymmetricContext) decryptFile(inputPath, outputPath string) error {
